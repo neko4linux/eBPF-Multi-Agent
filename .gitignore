@@ -1,0 +1,30 @@
+# Build artifacts
+build/
+*.o
+*.bpf.o
+
+# Generated files
+include/vmlinux.h
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+alerts.log
+
+# Test artifacts
+tests/*.out
+tests/*.log
+
+# Temporary files
+*.tmp
+*.temp
+*~

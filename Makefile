@@ -237,6 +237,18 @@ demo-simulate:
 	@echo "🤖 启动 Agent 检测模拟器..."
 	python3 demo/agent_simulator.py --backend http://localhost:8080
 
+demo-agents:
+	@echo "🤖 列出可用 AI Agent..."
+	python3 demo/agent_runner.py --list
+
+demo-benchmark:
+	@echo "🏁 运行 Agent Benchmark..."
+	python3 demo/agent_runner.py --benchmark
+
+demo-bench:
+	@echo "🏁 运行 Benchmark Suite..."
+	python3 demo/benchmark_suite.py --all
+
 # ═══════════════════════════════════════════════════════════════
 #  测试
 # ═══════════════════════════════════════════════════════════════

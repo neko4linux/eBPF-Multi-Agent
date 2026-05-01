@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/neko4linux/eBPF-Multi-Agent/backend/internal/agents"
 	"github.com/neko4linux/eBPF-Multi-Agent/backend/internal/model"
 	"github.com/prometheus/procfs"
 )
@@ -152,8 +153,17 @@ func (m *MonitorService) Stop() {
 
 // scanLoop 定时扫描 procfs 发现 Agent 进程
 func (m *MonitorService) scanLoop() {
-	// agent 关键词表 (进程名/cmdline 匹配)
-	agentKeywords := []string{"python", "node", "claude", "gemini", "gpt", "llm", "openai", "anthropic", "agent"}
+	// 使用 AgentRegistry 的进程名列表进行精确匹配
+	registry := agents.NewAgentRegistry()
+	knownAgents := registry.GetAll()
+
+	// 构建进程名 → AgentProfile 映射
+	procMap := make(map[string]*agents.AgentProfile)
+	for _, p := range knownAgents {
+		for _, name := range p.ProcessNames {
+			procMap[strings.ToLower(name)] = p
+		}
+	}
 
 	for {
 		select {
@@ -186,18 +196,32 @@ func (m *MonitorService) scanLoop() {
 				cmdline, _ := proc.CmdLine()
 				comm := m.procComm(pid)
 				fullCmd := strings.Join(cmdline, " ")
-				combined := strings.ToLower(comm + " " + fullCmd)
+				commLower := strings.ToLower(comm)
+				cmdLower := strings.ToLower(fullCmd)
 
-				isAgent := false
-				for _, kw := range agentKeywords {
-					if strings.Contains(combined, kw) {
-						isAgent = true
-						break
+				// 精确匹配: 进程名 或 命令行包含已知 Agent 关键词
+				var matchedProfile *agents.AgentProfile
+				if p, ok := procMap[commLower]; ok {
+					matchedProfile = p
+				} else {
+					for _, p := range knownAgents {
+						for _, pattern := range p.CmdlinePatterns {
+							if strings.Contains(cmdLower, strings.ToLower(pattern)) {
+								matchedProfile = p
+								break
+							}
+						}
+						if matchedProfile != nil {
+							break
+						}
 					}
 				}
 
-				if isAgent {
-					name := m.extractAgentName(fullCmd, comm)
+				if matchedProfile != nil {
+					name := matchedProfile.Name
+					if comm != "" {
+						name = comm
+					}
 					now := time.Now().Format(time.RFC3339)
 					agent := &model.Agent{
 						PID:       pid,
@@ -206,7 +230,7 @@ func (m *MonitorService) scanLoop() {
 						StartTime: time.Now().Unix(),
 					}
 					m.agents[pid] = agent
-					log.Printf("[Monitor] 发现 Agent: %s (PID=%d)", name, pid)
+					log.Printf("[Monitor] 发现 Agent: %s (PID=%d, Type=%s)", name, pid, matchedProfile.Type)
 
 					// 广播 Agent 发现事件
 					m.appendEvent(&model.Event{
@@ -214,7 +238,7 @@ func (m *MonitorService) scanLoop() {
 						PID:       pid,
 						Agent:     name,
 						Type:      model.EventExecve,
-						Detail:    "Agent 进程启动: " + name,
+						Detail:    fmt.Sprintf("Agent 进程启动: %s [%s]", name, matchedProfile.Type),
 						Timestamp: time.Now().UnixMilli(),
 					})
 				}

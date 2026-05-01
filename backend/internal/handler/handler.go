@@ -58,6 +58,10 @@ type Handler struct {
 	mlSvc      MLService
 	hub        *Hub
 	startTime  time.Time
+
+	// Agent 集成 — 共享实例
+	agentRegistry *agents.AgentRegistry
+	agentDetector *agents.Detector
 }
 
 // NewHandler 创建 Handler 实例
@@ -71,14 +75,34 @@ func NewHandler(
 	hub := NewHub()
 	go hub.Run()
 
+	// 初始化 Agent 检测系统（全局共享）
+	registry := agents.NewAgentRegistry()
+	detector := agents.NewDetector(registry)
+
+	// 注册检测回调：新 Agent 被发现时通过 WebSocket 广播
+	detector.OnDetected(func(da *agents.DetectedAgent) {
+		log.Printf("[Handler] 新 Agent 检测: %s (PID=%d, Type=%s, Risk=%.2f)",
+			da.Name, da.PID, da.Type, da.RiskScore)
+		hub.BroadcastJSON("agent_detected", da)
+	})
+
+	// 注册异常回调
+	detector.OnAnomaly(func(evt *agents.AnomalyEvent) {
+		log.Printf("[Handler] Agent 异常: %s Rule=%s Severity=%s",
+			evt.Agent.Name, evt.Rule.Name, evt.Rule.Severity)
+		hub.BroadcastJSON("agent_anomaly", evt)
+	})
+
 	return &Handler{
-		monitorSvc: monitorSvc,
-		alertSvc:   alertSvc,
-		agentSvc:   agentSvc,
-		correlator: correlator,
-		mlSvc:      mlSvc,
-		hub:        hub,
-		startTime:  time.Now(),
+		monitorSvc:    monitorSvc,
+		alertSvc:      alertSvc,
+		agentSvc:      agentSvc,
+		correlator:    correlator,
+		mlSvc:         mlSvc,
+		hub:           hub,
+		startTime:     time.Now(),
+		agentRegistry: registry,
+		agentDetector: detector,
 	}
 }
 
@@ -99,6 +123,7 @@ func (h *Handler) SetupRouter(port string) *http.Server {
 	{
 		api.GET("/health", h.handleHealth)
 		api.GET("/state", h.handleState)
+		api.GET("/stats", h.handleGetStats)
 		api.GET("/agents", h.handleGetAgents)
 		api.GET("/alerts", h.handleGetAlerts)
 		api.GET("/events", h.handleGetEvents)
@@ -109,11 +134,13 @@ func (h *Handler) SetupRouter(port string) *http.Server {
 		api.GET("/ws", h.handleWebSocket)
 
 		// ─── Agent 集成 API ───
-		agents := api.Group("/agents")
+		agentAPI := api.Group("/agents")
 		{
-			agents.GET("/profiles", h.handleGetAgentProfiles)
-			agents.GET("/detected", h.handleGetDetectedAgents)
-			agents.GET("/rules", h.handleGetAnomalyRules)
+			agentAPI.GET("/profiles", h.handleGetAgentProfiles)
+			agentAPI.GET("/detected", h.handleGetDetectedAgents)
+			agentAPI.GET("/rules", h.handleGetAnomalyRules)
+			agentAPI.GET("/types", h.handleGetAgentTypes)
+			agentAPI.POST("/detect", h.handleManualDetect)
 		}
 	}
 
@@ -156,7 +183,7 @@ func (h *Handler) handleHealth(c *gin.Context) {
 		Agents:  len(agents),
 		Alerts:  len(alerts),
 		Uptime:  time.Since(h.startTime).Truncate(time.Second).String(),
-		Version: "0.1.0",
+		Version: "0.2.0",
 		Time:    time.Now(),
 	})
 }
@@ -175,6 +202,23 @@ func (h *Handler) handleState(c *gin.Context) {
 		Events:      events,
 		Stats:       stats,
 		CausalLinks: causalLinks,
+	})
+}
+
+// handleGetStats 获取统计数据
+func (h *Handler) handleGetStats(c *gin.Context) {
+	stats := h.monitorSvc.GetStats()
+	agentCount := len(h.agentSvc.GetAgents())
+	detectedCount := len(h.agentDetector.GetDetected())
+
+	c.JSON(http.StatusOK, gin.H{
+		"total_events":    stats.TotalEvents,
+		"total_alerts":    stats.TotalAlerts,
+		"scans":           stats.Scans,
+		"total_agents":    agentCount,
+		"running_agents":  agentCount,
+		"detected_agents": detectedCount,
+		"uptime":          time.Since(h.startTime).Truncate(time.Second).String(),
 	})
 }
 
@@ -263,21 +307,68 @@ func (h *Handler) handleWebSocket(c *gin.Context) {
 	h.hub.ServeWS(c.Writer, c.Request)
 }
 
-// ─── Agent 集成 Handler ───
+// ─── Agent 集成 Handler（使用共享 Detector 实例） ───
 
 // handleGetAgentProfiles 获取所有 Agent 配置
 func (h *Handler) handleGetAgentProfiles(c *gin.Context) {
-	registry := agents.NewAgentRegistry()
-	c.JSON(http.StatusOK, registry.GetAll())
+	c.JSON(http.StatusOK, h.agentDetector.GetProfiles())
 }
 
 // handleGetDetectedAgents 获取已检测到的 Agent
 func (h *Handler) handleGetDetectedAgents(c *gin.Context) {
-	detector := agents.NewDetector(agents.NewAgentRegistry())
-	c.JSON(http.StatusOK, detector.GetDetected())
+	c.JSON(http.StatusOK, h.agentDetector.GetDetected())
 }
 
 // handleGetAnomalyRules 获取 Agent 异常检测规则
 func (h *Handler) handleGetAnomalyRules(c *gin.Context) {
 	c.JSON(http.StatusOK, agents.GetAnomalyRules())
+}
+
+// handleGetAgentTypes 获取所有支持的 Agent 类型
+func (h *Handler) handleGetAgentTypes(c *gin.Context) {
+	types := []gin.H{
+		{"type": "claude-code", "name": "Claude Code", "icon": "🟣", "risk": "MEDIUM"},
+		{"type": "codex", "name": "OpenAI Codex", "icon": "🟢", "risk": "MEDIUM"},
+		{"type": "gemini-cli", "name": "Gemini CLI", "icon": "🔵", "risk": "MEDIUM"},
+		{"type": "kiro-cli", "name": "Kiro CLI", "icon": "🟠", "risk": "HIGH"},
+		{"type": "cursor", "name": "Cursor", "icon": "🟡", "risk": "LOW"},
+		{"type": "copilot", "name": "GitHub Copilot", "icon": "⚫", "risk": "LOW"},
+		{"type": "aider", "name": "Aider", "icon": "⚪", "risk": "MEDIUM"},
+		{"type": "continue", "name": "Continue", "icon": "🟤", "risk": "LOW"},
+		{"type": "generic", "name": "Generic LLM", "icon": "⬜", "risk": "LOW"},
+	}
+	c.JSON(http.StatusOK, types)
+}
+
+// ManualDetectRequest 手动检测请求
+type ManualDetectRequest struct {
+	PID      uint32 `json:"pid"`
+	Comm     string `json:"comm"`
+	Cmdline  string `json:"cmdline"`
+	EventType string `json:"event_type"`
+	Detail   string `json:"detail"`
+}
+
+// handleManualDetect 手动触发 Agent 检测
+func (h *Handler) handleManualDetect(c *gin.Context) {
+	var req ManualDetectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.PID == 0 {
+		req.PID = 99999 // 模拟 PID
+	}
+	if req.EventType == "" {
+		req.EventType = "EXECVE"
+	}
+
+	h.agentDetector.ProcessEvent(req.PID, req.Comm, req.Cmdline, req.EventType, req.Detail)
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "ok",
+		"message": "检测事件已提交",
+		"pid":     req.PID,
+	})
 }

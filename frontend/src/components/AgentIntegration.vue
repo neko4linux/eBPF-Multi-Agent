@@ -1,33 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useApi } from '../composables/useApi'
-
-interface AgentProfile {
-  type: string
-  name: string
-  description: string
-  process_names: string[]
-  api_domains: string[]
-  risk_level: string
-  dangerous_ops: string[]
-}
-
-interface DetectedAgent {
-  pid: number
-  name: string
-  type: string
-  profile: AgentProfile
-  first_seen: string
-  last_seen: string
-  event_count: number
-  alert_count: number
-  risk_score: number
-}
+import type { AgentProfile, DetectedAgent, AnomalyRule, AgentTypeInfo } from '../composables/useApi'
 
 const api = useApi()
 const profiles = ref<AgentProfile[]>([])
 const detected = ref<DetectedAgent[]>([])
+const rules = ref<AnomalyRule[]>([])
+const agentTypes = ref<AgentTypeInfo[]>([])
 const selectedProfile = ref<AgentProfile | null>(null)
+const simulating = ref(false)
 
 const agentIcons: Record<string, string> = {
   'claude-code': '🟣',
@@ -42,10 +24,10 @@ const agentIcons: Record<string, string> = {
 }
 
 const riskColors: Record<string, string> = {
-  'LOW': 'var(--color-success)',
-  'MEDIUM': 'var(--color-warning)',
-  'HIGH': 'var(--color-danger)',
-  'CRITICAL': 'var(--color-critical)',
+  'LOW': 'var(--color-success, #3fb950)',
+  'MEDIUM': 'var(--color-warning, #d29922)',
+  'HIGH': 'var(--color-danger, #d29922)',
+  'CRITICAL': 'var(--color-critical, #f85149)',
 }
 
 const sortedProfiles = computed(() => {
@@ -56,24 +38,59 @@ const sortedProfiles = computed(() => {
 })
 
 const activeAgents = computed(() => detected.value.filter(a => a.risk_score > 0.3))
+const rulesByAgent = computed(() => {
+  const map: Record<string, number> = {}
+  for (const r of rules.value) {
+    map[r.agent_type] = (map[r.agent_type] || 0) + 1
+  }
+  return map
+})
 
 async function loadProfiles() {
-  try {
-    const data = await api.get('/api/agents/profiles')
-    profiles.value = data || []
-  } catch { /* ignore */ }
+  try { profiles.value = await api.getAgentProfiles() } catch { /* ignore */ }
 }
 
 async function loadDetected() {
+  try { detected.value = await api.getDetectedAgents() } catch { /* ignore */ }
+}
+
+async function loadRules() {
+  try { rules.value = await api.getAnomalyRules() } catch { /* ignore */ }
+}
+
+async function loadAgentTypes() {
+  try { agentTypes.value = await api.getAgentTypes() } catch { /* ignore */ }
+}
+
+// 模拟 Agent 检测
+async function simulateDetection(type: string) {
+  simulating.value = true
   try {
-    const data = await api.get('/api/agents/detected')
-    detected.value = data || []
-  } catch { /* ignore */ }
+    await api.manualDetect({
+      comm: type,
+      cmdline: `${type} --interactive --model sonnet`,
+      event_type: 'EXECVE',
+      detail: `Simulated ${type} agent detection`,
+    })
+    // 刷新检测列表
+    setTimeout(async () => {
+      await loadDetected()
+      simulating.value = false
+    }, 500)
+  } catch {
+    simulating.value = false
+  }
+}
+
+function riskPercent(score: number): number {
+  return Math.min(Math.round(score * 100), 100)
 }
 
 onMounted(() => {
   loadProfiles()
   loadDetected()
+  loadRules()
+  loadAgentTypes()
 })
 </script>
 
@@ -84,337 +101,376 @@ onMounted(() => {
       <p class="subtitle">实时检测和监控系统中运行的 AI 编程助手</p>
     </header>
 
-    <!-- 已检测到的 Agent -->
-    <section class="detected-section" v-if="detected.length">
-      <h3>🔍 已检测到的 Agent</h3>
-      <div class="agent-grid">
-        <div
-          v-for="agent in detected"
-          :key="agent.pid"
-          class="agent-card detected"
-          :style="{ borderColor: riskColors[agent.profile?.risk_level || 'LOW'] }"
+    <!-- 概览统计 -->
+    <div class="overview-grid">
+      <div class="overview-card">
+        <div class="ov-value">{{ profiles.length }}</div>
+        <div class="ov-label">已注册 Agent 类型</div>
+      </div>
+      <div class="overview-card" :class="{ warning: activeAgents.length > 0 }">
+        <div class="ov-value">{{ detected.length }}</div>
+        <div class="ov-label">已检测到</div>
+      </div>
+      <div class="overview-card" :class="{ danger: activeAgents.length > 2 }">
+        <div class="ov-value">{{ activeAgents.length }}</div>
+        <div class="ov-label">高风险活跃</div>
+      </div>
+      <div class="overview-card">
+        <div class="ov-value">{{ rules.length }}</div>
+        <div class="ov-label">检测规则</div>
+      </div>
+    </div>
+
+    <!-- 检测模拟器 -->
+    <div class="card simulator">
+      <div class="card-header">
+        <span>🎯 检测模拟器</span>
+        <span class="badge">演示模式</span>
+      </div>
+      <div class="sim-grid">
+        <button
+          v-for="t in agentTypes" :key="t.type"
+          class="sim-btn" :class="[t.risk.toLowerCase(), { active: simulating }]"
+          :disabled="simulating"
+          @click="simulateDetection(t.type)"
         >
-          <div class="agent-icon">{{ agentIcons[agent.type] || '⬜' }}</div>
-          <div class="agent-info">
-            <div class="agent-name">{{ agent.name }}</div>
-            <div class="agent-type">{{ agent.type }}</div>
-            <div class="agent-pid">PID: {{ agent.pid }}</div>
+          <span class="sim-icon">{{ t.icon }}</span>
+          <span class="sim-name">{{ t.name }}</span>
+          <span class="sim-risk">{{ t.risk }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 已检测 Agent 列表 -->
+    <div class="card" v-if="detected.length > 0">
+      <div class="card-header">
+        <span>🔍 已检测到的 Agent ({{ detected.length }})</span>
+        <button class="btn-sm" @click="loadDetected()">🔄 刷新</button>
+      </div>
+      <div class="detected-list">
+        <div v-for="agent in detected" :key="agent.pid" class="detected-item">
+          <div class="det-left">
+            <span class="det-icon">{{ agentIcons[agent.type] || '⬜' }}</span>
+            <div class="det-info">
+              <div class="det-name">{{ agent.profile?.name || agent.name }}</div>
+              <div class="det-meta">PID: {{ agent.pid }} · {{ agent.type }}</div>
+            </div>
           </div>
-          <div class="agent-stats">
-            <div class="stat">
+          <div class="det-center">
+            <div class="risk-meter">
+              <div class="risk-fill" :style="{ width: riskPercent(agent.risk_score) + '%' }"
+                :class="{ low: agent.risk_score < 0.3, medium: agent.risk_score < 0.6, high: agent.risk_score < 0.8, critical: agent.risk_score >= 0.8 }">
+              </div>
+            </div>
+            <span class="risk-label">风险 {{ riskPercent(agent.risk_score) }}%</span>
+          </div>
+          <div class="det-right">
+            <div class="stat-mini">
               <span class="stat-num">{{ agent.event_count }}</span>
-              <span class="stat-label">事件</span>
+              <span class="stat-desc">事件</span>
             </div>
-            <div class="stat" :class="{ 'has-alerts': agent.alert_count > 0 }">
+            <div class="stat-mini" :class="{ danger: agent.alert_count > 0 }">
               <span class="stat-num">{{ agent.alert_count }}</span>
-              <span class="stat-label">告警</span>
-            </div>
-            <div class="stat">
-              <span class="stat-num">{{ (agent.risk_score * 100).toFixed(0) }}%</span>
-              <span class="stat-label">风险</span>
+              <span class="stat-desc">告警</span>
             </div>
           </div>
         </div>
       </div>
-    </section>
+    </div>
 
-    <!-- Agent 配置文件 -->
-    <section class="profiles-section">
-      <h3>📋 支持的 AI Agent</h3>
+    <!-- Agent 类型列表 -->
+    <div class="card">
+      <div class="card-header">
+        <span>📋 支持的 Agent 类型 ({{ sortedProfiles.length }})</span>
+        <button class="btn-sm" @click="loadProfiles()">🔄 刷新</button>
+      </div>
       <div class="profiles-grid">
         <div
-          v-for="profile in sortedProfiles"
-          :key="profile.type"
-          class="profile-card"
-          :class="{ selected: selectedProfile?.type === profile.type }"
-          @click="selectedProfile = profile"
+          v-for="profile in sortedProfiles" :key="profile.type"
+          class="profile-card" :class="{ selected: selectedProfile?.type === profile.type }"
+          @click="selectedProfile = selectedProfile?.type === profile.type ? null : profile"
         >
           <div class="profile-header">
             <span class="profile-icon">{{ agentIcons[profile.type] || '⬜' }}</span>
             <span class="profile-name">{{ profile.name }}</span>
-            <span
-              class="risk-badge"
-              :style="{ background: riskColors[profile.risk_level] }"
-            >
+            <span class="risk-badge" :style="{ color: riskColors[profile.risk_level] }">
               {{ profile.risk_level }}
             </span>
           </div>
-          <p class="profile-desc">{{ profile.description }}</p>
-          <div class="profile-domains">
-            <span v-for="d in profile.api_domains" :key="d" class="domain-tag">
-              {{ d }}
-            </span>
+          <div class="profile-desc">{{ profile.description }}</div>
+          <div class="profile-stats">
+            <span class="ps-item">🔍 {{ profile.process_names.length }} 进程名</span>
+            <span class="ps-item">🌐 {{ profile.api_domains.length }} API域名</span>
+            <span class="ps-item">⚠️ {{ rulesByAgent[profile.type] || 0 }} 规则</span>
+          </div>
+
+          <!-- 展开详情 -->
+          <div v-if="selectedProfile?.type === profile.type" class="profile-details">
+            <div class="detail-section">
+              <h4>进程名</h4>
+              <div class="tag-list">
+                <span v-for="p in profile.process_names" :key="p" class="tag">{{ p }}</span>
+              </div>
+            </div>
+            <div class="detail-section">
+              <h4>API 域名</h4>
+              <div class="tag-list">
+                <span v-for="d in profile.api_domains" :key="d" class="tag domain">{{ d }}</span>
+              </div>
+            </div>
+            <div class="detail-section">
+              <h4>危险操作</h4>
+              <div class="tag-list">
+                <span v-for="op in profile.dangerous_ops" :key="op" class="tag danger">{{ op }}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    </section>
-
-    <!-- Agent 详情面板 -->
-    <section v-if="selectedProfile" class="detail-panel">
-      <div class="detail-header">
-        <span class="detail-icon">{{ agentIcons[selectedProfile.type] }}</span>
-        <h3>{{ selectedProfile.name }} — 集成详情</h3>
-        <button class="close-btn" @click="selectedProfile = null">✕</button>
-      </div>
-
-      <div class="detail-grid">
-        <div class="detail-section">
-          <h4>🔍 进程识别</h4>
-          <div class="tag-list">
-            <span v-for="n in selectedProfile.process_names" :key="n" class="tag">{{ n }}</span>
-          </div>
-        </div>
-
-        <div class="detail-section">
-          <h4>🌐 API 域名</h4>
-          <div class="tag-list">
-            <span v-for="d in selectedProfile.api_domains" :key="d" class="tag domain">{{ d }}</span>
-          </div>
-        </div>
-
-        <div class="detail-section">
-          <h4>⚠️ 风险操作</h4>
-          <ul class="risk-list">
-            <li v-for="op in selectedProfile.dangerous_ops" :key="op" class="risk-item">
-              {{ op }}
-            </li>
-          </ul>
-        </div>
-
-        <div class="detail-section">
-          <h4>📊 监控能力</h4>
-          <ul class="capability-list">
-            <li class="cap-item">✅ 进程名/命令行识别</li>
-            <li class="cap-item">✅ SSL/TLS 流量拦截 (uprobe)</li>
-            <li class="cap-item">✅ Prompt/Response 提取</li>
-            <li class="cap-item">✅ 异常行为检测</li>
-            <li class="cap-item">✅ Prompt 注入检测</li>
-            <li class="cap-item">✅ 数据外传检测</li>
-          </ul>
-        </div>
-      </div>
-    </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .agent-integration {
-  padding: 20px;
+  max-width: 1200px;
+}
+
+.section-header {
+  margin-bottom: 24px;
 }
 
 .section-header h2 {
-  margin: 0;
-  font-size: 20px;
-  color: var(--color-text);
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 4px;
 }
 
 .subtitle {
-  color: var(--color-text-secondary);
-  margin: 4px 0 20px;
+  font-size: 14px;
+  color: var(--text-secondary, #8b949e);
 }
 
-h3 {
-  font-size: 16px;
-  color: var(--color-text);
-  margin: 20px 0 12px;
+/* Overview Grid */
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
 }
 
-/* Agent 卡片 */
-.agent-grid, .profiles-grid {
+.overview-card {
+  background: var(--bg-secondary, #161b22);
+  border: 1px solid var(--border-color, #30363d);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  transition: border-color 0.2s;
+}
+
+.overview-card.warning { border-color: var(--color-warning, #d29922); }
+.overview-card.danger { border-color: var(--color-critical, #f85149); }
+
+.ov-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary, #e6edf3);
+}
+
+.ov-label {
+  font-size: 12px;
+  color: var(--text-secondary, #8b949e);
+  margin-top: 4px;
+}
+
+/* Card */
+.card {
+  background: var(--bg-secondary, #161b22);
+  border: 1px solid var(--border-color, #30363d);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.card-header {
+  padding: 14px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border-color, #30363d);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(88, 166, 255, 0.15);
+  color: var(--accent-blue, #58a6ff);
+}
+
+/* Simulator */
+.sim-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.sim-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  border: 1px solid var(--border-color, #30363d);
+  border-radius: 8px;
+  background: var(--bg-primary, #0d1117);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sim-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.sim-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.sim-btn.high:hover:not(:disabled) { border-color: var(--color-danger, #d29922); }
+.sim-btn.critical:hover:not(:disabled) { border-color: var(--color-critical, #f85149); }
+
+.sim-icon { font-size: 20px; }
+.sim-name { font-size: 11px; font-weight: 600; color: var(--text-primary, #e6edf3); }
+.sim-risk { font-size: 9px; color: var(--text-tertiary, #484f58); text-transform: uppercase; }
+
+/* Detected List */
+.detected-list { max-height: 400px; overflow-y: auto; }
+
+.detected-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color, #30363d);
+  transition: background 0.1s;
+}
+
+.detected-item:hover { background: var(--bg-tertiary, #1c2128); }
+.detected-item:last-child { border-bottom: none; }
+
+.det-left { display: flex; align-items: center; gap: 12px; min-width: 200px; }
+.det-icon { font-size: 24px; }
+.det-name { font-weight: 600; font-size: 14px; }
+.det-meta { font-size: 11px; color: var(--text-tertiary, #484f58); }
+
+.det-center { flex: 1; max-width: 200px; margin: 0 20px; }
+
+.risk-meter {
+  height: 6px;
+  background: var(--bg-tertiary, #1c2128);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.risk-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.risk-fill.low { background: #3fb950; }
+.risk-fill.medium { background: #d29922; }
+.risk-fill.high { background: #f0883e; }
+.risk-fill.critical { background: #f85149; }
+
+.risk-label { font-size: 10px; color: var(--text-tertiary, #484f58); }
+
+.det-right { display: flex; gap: 16px; }
+
+.stat-mini { text-align: center; }
+.stat-num { display: block; font-weight: 700; font-size: 16px; }
+.stat-desc { font-size: 10px; color: var(--text-tertiary, #484f58); }
+.stat-mini.danger .stat-num { color: var(--color-critical, #f85149); }
+
+/* Profile Grid */
+.profiles-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 12px;
-}
-
-.agent-card, .profile-card {
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
   padding: 16px;
+}
+
+.profile-card {
+  border: 1px solid var(--border-color, #30363d);
+  border-radius: 8px;
+  padding: 14px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.15s;
 }
 
-.agent-card:hover, .profile-card:hover {
-  border-color: var(--color-accent);
-  transform: translateY(-1px);
-}
+.profile-card:hover { border-color: var(--accent-blue, #58a6ff); }
+.profile-card.selected { border-color: var(--accent-blue, #58a6ff); background: rgba(88, 166, 255, 0.05); }
 
-.agent-card {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  border-left: 3px solid;
-}
-
-.agent-icon {
-  font-size: 32px;
-}
-
-.agent-info {
-  flex: 1;
-}
-
-.agent-name {
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.agent-type {
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  font-family: monospace;
-}
-
-.agent-pid {
-  color: var(--color-text-secondary);
-  font-size: 11px;
-}
-
-.agent-stats {
-  display: flex;
-  gap: 16px;
-}
-
-.stat {
-  text-align: center;
-}
-
-.stat-num {
-  display: block;
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.stat-label {
-  font-size: 10px;
-  color: var(--color-text-secondary);
-  text-transform: uppercase;
-}
-
-.has-alerts .stat-num {
-  color: var(--color-danger);
-}
-
-/* 配置文件卡片 */
 .profile-header {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-bottom: 6px;
+}
+
+.profile-icon { font-size: 18px; }
+.profile-name { font-weight: 600; font-size: 14px; flex: 1; }
+.risk-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; }
+
+.profile-desc {
+  font-size: 12px;
+  color: var(--text-secondary, #8b949e);
   margin-bottom: 8px;
 }
 
-.profile-icon {
-  font-size: 24px;
-}
-
-.profile-name {
-  font-weight: 600;
-  font-size: 14px;
-  flex: 1;
-}
-
-.risk-badge {
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 10px;
-  font-weight: 600;
-  color: white;
-}
-
-.profile-desc {
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  margin: 0 0 8px;
-}
-
-.profile-domains {
+.profile-stats {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.domain-tag {
-  background: var(--color-bg-tertiary);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-family: monospace;
-  color: var(--color-text-secondary);
-}
-
-/* 详情面板 */
-.detail-panel {
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 20px;
-  margin-top: 20px;
-}
-
-.detail-header {
-  display: flex;
-  align-items: center;
   gap: 12px;
-  margin-bottom: 16px;
 }
 
-.detail-header h3 {
-  margin: 0;
-  flex: 1;
+.ps-item {
+  font-size: 11px;
+  color: var(--text-tertiary, #484f58);
 }
 
-.close-btn {
-  background: none;
-  border: none;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  font-size: 18px;
+/* Profile Details */
+.profile-details {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color, #30363d);
 }
 
-.detail-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
+.detail-section { margin-bottom: 10px; }
+.detail-section h4 { font-size: 11px; color: var(--text-tertiary, #484f58); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
 
-.detail-section h4 {
-  font-size: 13px;
-  margin: 0 0 8px;
-  color: var(--color-text);
-}
-
-.tag-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
+.tag-list { display: flex; flex-wrap: wrap; gap: 4px; }
 
 .tag {
-  background: var(--color-bg-tertiary);
-  padding: 3px 8px;
+  font-size: 10px;
+  padding: 2px 8px;
   border-radius: 4px;
-  font-size: 11px;
+  background: var(--bg-tertiary, #1c2128);
+  color: var(--text-secondary, #8b949e);
   font-family: monospace;
 }
 
-.tag.domain {
-  color: var(--color-accent);
-}
+.tag.domain { background: rgba(88, 166, 255, 0.1); color: var(--accent-blue, #58a6ff); }
+.tag.danger { background: rgba(248, 81, 73, 0.1); color: var(--color-critical, #f85149); }
 
-.risk-list, .capability-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
+.btn-sm {
+  font-size: 11px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-color, #30363d);
+  border-radius: 4px;
+  background: var(--bg-primary, #0d1117);
+  color: var(--text-secondary, #8b949e);
+  cursor: pointer;
 }
-
-.risk-item, .cap-item {
-  padding: 4px 0;
-  font-size: 12px;
-  color: var(--color-text-secondary);
-}
-
-.risk-item::before {
-  content: "⚠️ ";
-}
+.btn-sm:hover { color: var(--text-primary, #e6edf3); }
 </style>

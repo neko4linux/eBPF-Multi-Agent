@@ -1,218 +1,230 @@
 # 基于 eBPF 的系统级多智能体异常监测框架
 
+[![Go](https://img.shields.io/badge/Go-1.24-blue)](https://go.dev/)
+[![Vue](https://img.shields.io/badge/Vue-3-green)](https://vuejs.org/)
+[![eBPF](https://img.shields.io/badge/eBPF-kernel-orange)](https://ebpf.io/)
+[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+
 ## 项目概述
 
 本项目是一个基于 eBPF (Extended Berkeley Packet Filter) 技术的非侵入式监测系统，能够同时对设备中运行的多个智能体（AI Agent）进行实时观测与异常分析。
 
 ### 核心特性
 
-- **非侵入式监控**: 利用 eBPF 技术在不修改内核源码及智能体应用程序的前提下进行监测
-- **多层级数据捕获**: 贯通应用层交互与底层系统调用
-- **实时异常检测**: 识别逻辑死循环、资源滥用、安全异常等
-- **跨层数据关联**: 建立 Prompt 与底层操作的因果链路
+- **🤖 AI Agent 识别**: 自动识别 Claude Code, Codex, Gemini CLI, Kiro CLI, Cursor, Copilot, Aider 等主流 AI 编程助手
+- **🔍 非侵入式监控**: 利用 eBPF 技术在不修改内核源码及智能体应用程序的前提下进行监测
+- **📡 多层级数据捕获**: 贯通应用层交互与底层系统调用
+- **⚡ 实时异常检测**: 识别逻辑死循环、资源滥用、安全异常、Prompt 注入等
+- **🔗 跨层数据关联**: 建立 Prompt 与底层操作的因果链路
+- **📊 ML 分类**: 集成机器学习模型进行行为分类和异常评分
+- **🖥️ 实时仪表盘**: Vue 3 + WebSocket 实时数据推送
 
 ## 系统架构
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    用户态 (User Space)                       │
+│                    前端 (Vue 3 + TypeScript)                 │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │ 主控制程序   │  │ 异常检测器  │  │    告警管理器       │  │
-│  │ (main.c)    │  │ (detector)  │  │ (alert_manager)     │  │
+│  │   仪表盘    │  │ Agent 集成  │  │    告警 & 规则      │  │
+│  │  Dashboard   │  │ Integration │  │  Alerts & Rules     │  │
 │  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘  │
-│         │                │                     │            │
-│  ┌──────┴────────────────┴─────────────────────┴──────────┐  │
-│  │              Ring Buffer 事件处理                       │  │
-│  └─────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
+│         └────────────────┼────────────────────┘             │
+│                          │ WebSocket + REST                 │
+└──────────────────────────┼──────────────────────────────────┘
+                           ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    内核态 (Kernel Space)                     │
+│                    后端 (Go + Gin)                           │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+│  │ Agent 检测  │  │ 异常规则    │  │   跨层关联器        │  │
+│  │  Detector   │  │  Rules      │  │   Correlator        │  │
+│  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘  │
+│         └────────────────┼────────────────────┘             │
+│                          │ cgo                              │
+└──────────────────────────┼──────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    内核态 (eBPF C)                           │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+│  │ Tracepoints │  │  Kprobes   │  │    Uprobes          │  │
+│  │ (syscalls)  │  │ (tcp_*)    │  │  (SSL_read/write)   │  │
+│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
 │  ┌─────────────────────────────────────────────────────────┐ │
-│  │              eBPF 程序 (main.bpf.c)                      │ │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │ │
-│  │  │ Tracepoints │  │  Kprobes   │  │    Uprobes      │  │ │
-│  │  │ (syscalls)  │  │ (tcp_*)    │  │  (SSL_read/write)│  │ │
-│  │  └─────────────┘  └─────────────┘  └─────────────────┘  │ │
-│  └─────────────────────────────────────────────────────────┘ │
-│  ┌─────────────────────────────────────────────────────────┐ │
-│  │              BPF Maps (数据交换)                         │ │
-│  │  Ring Buffers | Hash Maps | Per-CPU Arrays              │ │
+│  │              BPF Maps (Ring Buffer + Hash Maps)         │ │
 │  └─────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## 目录结构
+## 支持的 AI Agent
 
-```
-eBPF-Multi-Agent/
-├── Makefile                 # 构建配置
-├── README.md                # 项目文档
-├── PROGRESS.md              # 开发进度记录
-├── include/
-│   ├── common.h             # 公共数据结构定义
-│   └── vmlinux.h            # 内核BTF类型定义（自动生成）
-├── src/
-│   ├── bpf/
-│   │   └── main.bpf.c       # eBPF内核态程序
-│   └── user/
-│       ├── main.c           # 用户态主程序
-│       ├── anomaly_detector.c/h   # 异常检测模块
-│       ├── alert_manager.c/h      # 告警管理模块
-│       ├── agent_tracker.c/h      # 智能体追踪模块
-│       └── event_processor.c/h    # 事件处理模块
-├── scripts/
-│   └── test.sh              # 测试脚本
-└── tests/                   # 测试用例
-```
+| Agent | 类型 | 风险等级 | API 域名 | 检测规则数 |
+|-------|------|---------|----------|-----------|
+| 🟣 Claude Code | `claude-code` | MEDIUM | api.anthropic.com | 4 |
+| 🟢 OpenAI Codex | `codex` | MEDIUM | api.openai.com | 3 |
+| 🔵 Gemini CLI | `gemini-cli` | MEDIUM | generativelanguage.googleapis.com | 3 |
+| 🟠 Kiro CLI | `kiro-cli` | HIGH | kiro.dev / bedrock | 4 |
+| 🟡 Cursor | `cursor` | LOW | api.cursor.sh | 2 |
+| ⚫ GitHub Copilot | `copilot` | LOW | copilot-proxy.githubusercontent.com | 2 |
+| ⚪ Aider | `aider` | MEDIUM | api.openai/anthropic/deepseek | 2 |
 
-## 构建与运行
+### 检测规则类型
+
+- **Prompt 注入检测**: `ignore previous instructions`, `you are now a` 等越狱尝试
+- **数据外传检测**: curl/wget 到非白名单域名, ngrok/pastebin 等隧道服务
+- **凭证泄露检测**: 访问 `.ssh/`, `.aws/credentials`, `.gcloud/` 等敏感文件
+- **提权检测**: `chmod 777`, `sudo`, `chown root` 等权限修改
+- **沙箱逃逸检测**: `chroot`, `unshare`, `nsenter` 等容器逃逸
+
+## 快速开始
 
 ### 环境要求
 
-- Linux Kernel >= 5.15
-- clang >= 14
-- libbpf-dev
+- Linux (内核 >= 5.10, 支持 BTF)
+- Go >= 1.24
+- Node.js >= 18
+- Clang + LLVM
 - bpftool
-- libelf-dev
-- libjson-c-dev
 
 ### 安装依赖
 
 ```bash
-# Ubuntu/Debian
-sudo apt-get install -y libbpf-dev libelf-dev zlib1g-dev \
-    llvm clang build-essential pkg-config libjson-c-dev
-
-# 编译安装 bpftool (如果系统包不可用)
-git clone --recurse-submodules https://github.com/libbpf/bpftool.git
-cd bpftool/src && make && sudo make install
+make install-deps
 ```
 
-### 编译
+### 构建
 
 ```bash
-# 完整编译
-make all
+# 构建全部 (eBPF + Go 后端 + Vue 前端)
+make build
 
-# 仅编译 BPF 程序
-make bpf
+# 仅构建后端
+make be
 
-# 仅编译用户态程序
-make user
-
-# 清理
-make clean
+# 仅构建前端
+make fe
 ```
 
 ### 运行
 
 ```bash
-# 需要 root 权限运行
-sudo ./build/agent-monitor -f build/main.bpf.o
+# 生产模式 (构建后启动)
+make run
 
-# 查看帮助
-./build/agent-monitor --help
+# 开发模式 (前后端并行, 热重载)
+make dev
+
+# 仅启动后端
+make dev-backend
+
+# 仅启动前端
+make dev-frontend
 ```
 
-## 功能说明
-
-### 1. 多层级数据捕获
-
-#### 基础功能
-- **进程监控**: execve, fork, clone 等系统调用
-- **文件监控**: openat, unlinkat 等文件操作
-- **网络监控**: connect, accept 等网络连接
-
-#### 进阶功能
-- **HTTPS 解密**: 通过 uprobe hook SSL_read/SSL_write 获取明文数据
-- **Prompt 提取**: 从加密流量中提取 AI Agent 的 Prompt/Response
-
-### 2. 异常检测
-
-| 异常类型 | 描述 | 检测方法 |
-|---------|------|---------|
-| 逻辑死循环 | 高频 API 调用 + 重复 Prompt | 统计分析 |
-| 资源滥用 | 过多文件操作/进程创建 | 阈值检测 |
-| Shell 启动 | 非预期的命令行解释程序 | 进程监控 |
-| 敏感文件访问 | 越权访问系统敏感文件 | 路径匹配 |
-| 工作区违规 | 工作区外文件删除操作 | 路径检查 |
-
-### 3. 告警输出
-
-告警以 JSON 格式输出，包含：
-- 时间戳
-- 进程 PID/TID
-- 异常类型与严重级别
-- 描述与证据
-- 关联的 Prompt 上下文（如有）
-
-```json
-{
-  "timestamp": "2026-03-23 12:00:00",
-  "pid": 12345,
-  "type": "SHELL_SPAWN",
-  "severity": "HIGH",
-  "description": "Non-expected shell spawn detected",
-  "evidence": "Shell command executed: /bin/bash"
-}
-```
-
-## 性能考虑
-
-- **轻量级设计**: 使用 Ring Buffer 高效传输事件
-- **低开销**: 目标性能损耗 <= 5%
-- **非阻塞**: 异步事件处理，不影响被监控进程
-
-## Python Demo & 沙箱
-
-### 环境要求
-- Python 3.11+
-- [uv](https://github.com/astral-sh/uv) 包管理器
-
-### 快速开始
+### Agent 检测模拟
 
 ```bash
-cd demo
+# 模拟多个 AI Agent 的系统行为
+make demo-simulate
 
-# 安装依赖
-uv sync
+# 或直接运行
+python3 demo/agent_simulator.py --backend http://localhost:8080
 
-# 训练 ML 模型 (基于 ADFA-LD 数据集)
-uv run python ml_classifier_v2.py
-
-# 启动交互式沙箱
-uv run python sandbox_cli.py
-
-# 运行完整 demo (规则 + ML)
-uv run python main_with_ml.py
-
-# 实时进程监控
-uv run python live_monitor.py -d 30
+# 模拟单个 Agent
+python3 demo/agent_simulator.py --agent claude-code
 ```
 
-### ML 模型性能
+## API 接口
 
-| 模型 | Accuracy | F1 | AUC |
-|------|----------|-----|-----|
-| RandomForest | 94.6% | 94.5% | 97.8% |
-| Ensemble | 94.4% | - | 97.7% |
-| 攻击分类 (4类) | 83.8% | - | - |
+### 核心接口
 
-特征: 2715维 (n-gram + Markov转移矩阵 + 统计 + 转移熵)
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/health` | 健康检查 |
+| GET | `/api/state` | 完整仪表盘状态 |
+| GET | `/api/stats` | 统计数据 |
+| GET | `/api/agents` | 智能体列表 |
+| GET | `/api/alerts` | 告警列表 |
+| GET | `/api/events` | 事件列表 |
+| GET | `/api/causal-links` | 因果关联 |
+| POST | `/api/spawn/:name` | 启动智能体 |
+| POST | `/api/trigger/:scenario` | 触发测试场景 |
+| GET | `/api/ws` | WebSocket 实时推送 |
 
-## 参考资料
+### Agent 集成接口
 
-1. Brendan Greg. BPF Performance Tools
-2. Liz Rice. Learning eBPF
-3. [Pixie](https://px.dev/) - Kubernetes 可观测性工具
-4. [Cilium](https://cilium.io/) - 基于 eBPF 的网络/安全方案
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/agents/profiles` | 所有 Agent 配置 |
+| GET | `/api/agents/detected` | 已检测到的 Agent |
+| GET | `/api/agents/rules` | 异常检测规则库 |
+| GET | `/api/agents/types` | 支持的 Agent 类型 |
+| POST | `/api/agents/detect` | 手动触发检测 |
 
-## 许可证
+## 目录结构
 
-Dual BSD/GPL
+```
+eBPF-Multi-Agent/
+├── Makefile                 # 统一构建配置
+├── README.md                # 项目文档
+├── src/
+│   ├── bpf/
+│   │   └── main.bpf.c       # eBPF 内核态程序
+│   └── user/                 # C 用户态程序 (legacy)
+├── backend/
+│   ├── cmd/main.go           # Go 后端入口
+│   ├── internal/
+│   │   ├── agents/           # Agent 检测引擎
+│   │   │   ├── registry.go   # Agent 注册表 (8种 Agent)
+│   │   │   ├── detector.go   # Agent 检测器
+│   │   │   ├── anomaly_rules.go  # 异常检测规则 (25+ 规则)
+│   │   │   └── prompt_parser.go  # Prompt/Response 解析
+│   │   ├── handler/          # HTTP/WS 处理器
+│   │   ├── service/          # 业务逻辑服务
+│   │   └── model/            # 数据模型
+│   └── go.mod
+├── frontend/
+│   ├── src/
+│   │   ├── views/            # 页面组件
+│   │   ├── components/       # 通用组件
+│   │   ├── composables/      # Vue 组合式函数
+│   │   ├── stores/           # Pinia 状态管理
+│   │   └── types/            # TypeScript 类型
+│   └── package.json
+├── demo/
+│   ├── agent_simulator.py    # Agent 检测模拟器
+│   ├── ml_classifier_v2.py   # ML 分类器
+│   ├── sandbox_cli.py        # 交互式沙箱
+│   └── ...
+└── docs/
+    ├── 开发指南.md
+    └── 技术架构.md
+```
 
-## 作者
+## 技术栈
 
-2026年全国大学生计算机系统能力大赛参赛作品
+| 层级 | 技术 | 用途 |
+|------|------|------|
+| 内核态 | eBPF (C) | 系统调用追踪、网络流量捕获 |
+| 后端 | Go + Gin | REST API、WebSocket、Agent 检测引擎 |
+| 前端 | Vue 3 + TypeScript | 实时仪表盘、数据可视化 |
+| ML | Python + scikit-learn | 行为分类、异常评分 |
+| 构建 | Makefile + Vite | 统一构建系统 |
+
+## 开发
+
+```bash
+# 运行测试
+make test
+
+# 格式化代码
+make fmt
+
+# 静态分析
+make vet
+
+# Lint 检查
+make lint
+```
+
+## License
+
+MIT License

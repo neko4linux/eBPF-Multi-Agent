@@ -233,6 +233,10 @@ demo:
 	@echo "📊 运行完整 demo..."
 	cd demo && uv run python main_with_ml.py
 
+demo-simulate:
+	@echo "🤖 启动 Agent 检测模拟器..."
+	python3 demo/agent_simulator.py --backend http://localhost:8080
+
 # ═══════════════════════════════════════════════════════════════
 #  测试
 # ═══════════════════════════════════════════════════════════════

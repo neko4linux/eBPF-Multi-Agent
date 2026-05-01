@@ -43,7 +43,7 @@ export interface CausalLink {
 }
 
 export interface WSMessage {
-  type: 'event' | 'alert' | 'agent_update' | 'stats'
+  type: 'event' | 'alert' | 'agent_update' | 'agent_detected' | 'agent_anomaly' | 'stats' | 'clear'
   data: any
 }
 

@@ -27,3 +27,8 @@ backend/vendor/
 # OS
 .DS_Store
 Thumbs.db
+frontend/dist/
+build/
+demo/.venv/
+demo/__pycache__/
+node_modules/

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/neko4linux/eBPF-Multi-Agent/backend/internal/agents"
 	"github.com/neko4linux/eBPF-Multi-Agent/backend/internal/model"
 )
 
@@ -106,6 +107,14 @@ func (h *Handler) SetupRouter(port string) *http.Server {
 		api.POST("/trigger/:scenario", h.handleTriggerScenario)
 		api.POST("/clear", h.handleClear)
 		api.GET("/ws", h.handleWebSocket)
+
+		// ─── Agent 集成 API ───
+		agents := api.Group("/agents")
+		{
+			agents.GET("/profiles", h.handleGetAgentProfiles)
+			agents.GET("/detected", h.handleGetDetectedAgents)
+			agents.GET("/rules", h.handleGetAnomalyRules)
+		}
 	}
 
 	// ─── 静态文件服务（生产模式） ───
@@ -252,4 +261,23 @@ func (h *Handler) handleClear(c *gin.Context) {
 // handleWebSocket WebSocket 升级处理
 func (h *Handler) handleWebSocket(c *gin.Context) {
 	h.hub.ServeWS(c.Writer, c.Request)
+}
+
+// ─── Agent 集成 Handler ───
+
+// handleGetAgentProfiles 获取所有 Agent 配置
+func (h *Handler) handleGetAgentProfiles(c *gin.Context) {
+	registry := agents.NewAgentRegistry()
+	c.JSON(http.StatusOK, registry.GetAll())
+}
+
+// handleGetDetectedAgents 获取已检测到的 Agent
+func (h *Handler) handleGetDetectedAgents(c *gin.Context) {
+	detector := agents.NewDetector(agents.NewAgentRegistry())
+	c.JSON(http.StatusOK, detector.GetDetected())
+}
+
+// handleGetAnomalyRules 获取 Agent 异常检测规则
+func (h *Handler) handleGetAnomalyRules(c *gin.Context) {
+	c.JSON(http.StatusOK, agents.GetAnomalyRules())
 }

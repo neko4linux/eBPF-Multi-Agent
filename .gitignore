@@ -1,30 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Data (too large for git)
+demo/data/ADFA-LD/
+demo/data/adfa-ld/
+
+# Models (binary, too large)
+demo/models/*.pkl
+
 # Build artifacts
 build/
 *.o
 *.bpf.o
-
-# Generated files
 include/vmlinux.h
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
+# Logs
+*.log
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Logs
-*.log
-alerts.log
-
-# Test artifacts
-tests/*.out
-tests/*.log
-
-# Temporary files
-*.tmp
-*.temp
-*~

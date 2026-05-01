@@ -165,6 +165,43 @@ sudo ./build/agent-monitor -f build/main.bpf.o
 - **低开销**: 目标性能损耗 <= 5%
 - **非阻塞**: 异步事件处理，不影响被监控进程
 
+## Python Demo & 沙箱
+
+### 环境要求
+- Python 3.11+
+- [uv](https://github.com/astral-sh/uv) 包管理器
+
+### 快速开始
+
+```bash
+cd demo
+
+# 安装依赖
+uv sync
+
+# 训练 ML 模型 (基于 ADFA-LD 数据集)
+uv run python ml_classifier_v2.py
+
+# 启动交互式沙箱
+uv run python sandbox_cli.py
+
+# 运行完整 demo (规则 + ML)
+uv run python main_with_ml.py
+
+# 实时进程监控
+uv run python live_monitor.py -d 30
+```
+
+### ML 模型性能
+
+| 模型 | Accuracy | F1 | AUC |
+|------|----------|-----|-----|
+| RandomForest | 94.6% | 94.5% | 97.8% |
+| Ensemble | 94.4% | - | 97.7% |
+| 攻击分类 (4类) | 83.8% | - | - |
+
+特征: 2715维 (n-gram + Markov转移矩阵 + 统计 + 转移熵)
+
 ## 参考资料
 
 1. Brendan Greg. BPF Performance Tools

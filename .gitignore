@@ -4,22 +4,25 @@ __pycache__/
 *.pyo
 .venv/
 *.egg-info/
-
-# Data (too large for git)
 demo/data/ADFA-LD/
 demo/data/adfa-ld/
-
-# Models (binary, too large)
 demo/models/*.pkl
+*.log
+benchmark_report.json
 
-# Build artifacts
+# Build
 build/
 *.o
 *.bpf.o
 include/vmlinux.h
+include/main.skel.h
 
-# Logs
-*.log
+# Node
+node_modules/
+frontend/dist/
+
+# Go
+backend/vendor/
 
 # OS
 .DS_Store

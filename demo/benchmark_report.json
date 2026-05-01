@@ -1,0 +1,94 @@
+[
+  {
+    "task": "CPU \u5bc6\u96c6",
+    "baseline": {
+      "mean": 2.0001107916080705,
+      "median": 2.000012604985386,
+      "stdev": 0.00017174113334638983,
+      "min": 2.000010671792552,
+      "max": 2.000309098046273,
+      "iterations": 3
+    },
+    "monitored": {
+      "mean": 2.000025245749081,
+      "median": 2.000031214207411,
+      "stdev": 1.0997036923402398e-05,
+      "min": 2.0000125549267977,
+      "max": 2.000031968113035,
+      "iterations": 3,
+      "monitor_overhead_mean": 0.021165343896987345,
+      "monitor_samples": 78
+    },
+    "overhead_pct": -0.0,
+    "passed": true
+  },
+  {
+    "task": "IO \u5bc6\u96c6 (1000\u6b21\u5199\u8bfb)",
+    "baseline": {
+      "mean": 0.5022482885979116,
+      "median": 0.4777440410107374,
+      "stdev": 0.04412344121024797,
+      "min": 0.4758153448347002,
+      "max": 0.5531854799482971,
+      "iterations": 3
+    },
+    "monitored": {
+      "mean": 0.2876339835735659,
+      "median": 0.27346236584708095,
+      "stdev": 0.033991085094251784,
+      "min": 0.26302171987481415,
+      "max": 0.32641786499880254,
+      "iterations": 3,
+      "monitor_overhead_mean": 0.001404975267017589,
+      "monitor_samples": 17
+    },
+    "overhead_pct": -42.73,
+    "passed": false
+  },
+  {
+    "task": "\u5185\u5b58\u5bc6\u96c6 (100MB)",
+    "baseline": {
+      "mean": 0.18756191603218517,
+      "median": 0.1803510191384703,
+      "stdev": 0.03744591286414566,
+      "min": 0.15424584480933845,
+      "max": 0.22808888414874673,
+      "iterations": 3
+    },
+    "monitored": {
+      "mean": 0.2372148659390708,
+      "median": 0.234816123964265,
+      "stdev": 0.01585181172764187,
+      "min": 0.2226991339121014,
+      "max": 0.25412933994084597,
+      "iterations": 3,
+      "monitor_overhead_mean": 0.21692894282750785,
+      "monitor_samples": 2
+    },
+    "overhead_pct": 26.47,
+    "passed": false
+  },
+  {
+    "task": "\u7f51\u7edc\u5bc6\u96c6 (100\u6b21\u8fde\u63a5)",
+    "baseline": {
+      "mean": 0.07168083971676727,
+      "median": 0.07275586202740669,
+      "stdev": 0.004865853900029947,
+      "min": 0.06636737007647753,
+      "max": 0.0759192870464176,
+      "iterations": 3
+    },
+    "monitored": {
+      "mean": 0.07139031169936061,
+      "median": 0.07013256009668112,
+      "stdev": 0.0030043280429291664,
+      "min": 0.06921927095390856,
+      "max": 0.07481910404749215,
+      "iterations": 3,
+      "monitor_overhead_mean": 0.0032318647135980427,
+      "monitor_samples": 4
+    },
+    "overhead_pct": -0.41,
+    "passed": true
+  }
+]

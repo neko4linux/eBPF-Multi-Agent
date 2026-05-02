@@ -381,6 +381,8 @@ help:
 	@echo "  make demo-agents    列出可用 AI Agent"
 	@echo "  make demo-benchmark 运行 Agent Benchmark"
 	@echo "  make demo-bench     运行 Benchmark Suite"
+	@echo "  make demo-ollama    Ollama Agent 信息"
+	@echo "  make demo-ollama-bench  Ollama Benchmark"
 	@echo ""
 	@echo "测试 & 质量:"
 	@echo "  make test           运行全部测试"

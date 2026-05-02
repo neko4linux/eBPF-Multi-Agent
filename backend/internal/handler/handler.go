@@ -335,6 +335,7 @@ func (h *Handler) handleGetAgentTypes(c *gin.Context) {
 		{"type": "copilot", "name": "GitHub Copilot", "icon": "⚫", "risk": "LOW"},
 		{"type": "aider", "name": "Aider", "icon": "⚪", "risk": "MEDIUM"},
 		{"type": "continue", "name": "Continue", "icon": "🟤", "risk": "LOW"},
+		{"type": "ollama", "name": "Ollama", "icon": "🦙", "risk": "MEDIUM"},
 		{"type": "generic", "name": "Generic LLM", "icon": "⬜", "risk": "LOW"},
 	}
 	c.JSON(http.StatusOK, types)

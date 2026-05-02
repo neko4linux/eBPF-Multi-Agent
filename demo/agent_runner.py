@@ -137,6 +137,27 @@ AGENTS = [
             },
         ],
     ),
+    AgentDef(
+        name="Ollama",
+        agent_type="ollama",
+        icon="🦙",
+        binary="/usr/local/bin/ollama",
+        version_cmd="--version",
+        api_env_key="OLLAMA_API_KEY",
+        risk_level="MEDIUM",
+        benchmark_tasks=[
+            {
+                "id": "hello",
+                "prompt": "Say hello in one sentence.",
+                "timeout": 30,
+            },
+            {
+                "id": "code-gen",
+                "prompt": "Write a Python function that checks if a number is prime.",
+                "timeout": 60,
+            },
+        ],
+    ),
 ]
 
 AGENT_MAP = {a.agent_type: a for a in AGENTS}
@@ -229,6 +250,35 @@ class AgentRunner:
 
         return self._run_process("gemini-cli", cmd, task)
 
+    def run_ollama(self, task: dict) -> dict:
+        """运行 Ollama (本地/云端)"""
+        model = os.environ.get("OLLAMA_MODEL", "qwen3:0.6b")
+        endpoint = os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434")
+
+        # 使用 HTTP API
+        try:
+            import requests
+            payload = {"model": model, "prompt": task["prompt"], "stream": False}
+            start = time.time()
+            r = requests.post(f"{endpoint}/api/generate", json=payload, timeout=task.get("timeout", 60))
+            duration = int((time.time() - start) * 1000)
+            data = r.json()
+
+            if "error" in data:
+                print(f"    ❌ Ollama 错误: {data['error']}")
+                return {"agent": "ollama", "task_id": task["id"], "success": False,
+                        "duration_ms": duration, "stderr": data["error"]}
+
+            response = data.get("response", "")[:500]
+            print(f"    ✅ Ollama 响应: {response[:100]}...")
+            return {"agent": "ollama", "task_id": task["id"], "success": True,
+                    "duration_ms": duration, "stdout": response,
+                    "pid": None, "exit_code": 0}
+        except Exception as e:
+            print(f"    ❌ Ollama 异常: {e}")
+            return {"agent": "ollama", "task_id": task["id"], "success": False,
+                    "duration_ms": 0, "stderr": str(e)}
+
     def run_aider(self, task: dict) -> dict:
         """运行 Aider CLI"""
         # Aider 需要一个文件上下文，创建临时文件
@@ -319,6 +369,7 @@ class AgentRunner:
             "claude-code": self.run_claude_code,
             "codex": self.run_codex,
             "gemini-cli": self.run_gemini,
+            "ollama": self.run_ollama,
             "aider": self.run_aider,
         }
 

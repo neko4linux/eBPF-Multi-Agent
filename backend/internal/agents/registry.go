@@ -19,6 +19,7 @@ const (
 	AgentCopilot    AgentType = "copilot"
 	AgentAider      AgentType = "aider"
 	AgentContinue   AgentType = "continue"
+	AgentOllama     AgentType = "ollama"
 	AgentGeneric    AgentType = "generic"
 )
 
@@ -183,6 +184,37 @@ func (r *AgentRegistry) registerDefaults() {
 		DangerousOps: []string{
 			"direct file editing",
 			"git commit manipulation",
+		},
+		RiskLevel: "MEDIUM",
+	})
+
+	r.Register(&AgentProfile{
+		Type:        AgentOllama,
+		Name:        "Ollama",
+		Description: "Ollama 本地/云端 LLM 推理引擎",
+		ProcessNames: []string{
+			"ollama", "ollama-runner",
+		},
+		CmdlinePatterns: []string{"ollama", "ollama serve", "ollama run", "ollama pull"},
+		APIDomains: []string{
+			"localhost:11434",
+			"127.0.0.1:11434",
+			"ollama.com",
+			"cloud.ollama.com",
+			"api.ollama.com",
+		},
+		APITokens: []string{
+			"ollama", "generate", "chat/completions",
+			"model:", "prompt:", "stream:",
+			"llama", "mistral", "qwen", "gemma", "phi", "deepseek",
+		},
+		SSLHookTarget: "libssl.so",
+		DangerousOps: []string{
+			"arbitrary model execution",
+			"local code execution via tool calls",
+			"data exfiltration via model output",
+			"model supply chain attacks",
+			"prompt injection via system prompt",
 		},
 		RiskLevel: "MEDIUM",
 	})

@@ -140,6 +140,40 @@ func GetAnomalyRules() []AnomalyRule {
 			Keywords:    []string{"cursor --install-extension", "code --install-extension"},
 		},
 
+		// ═══ Ollama 专属规则 ═══
+		{
+			Name:        "ollama-model-pull",
+			AgentType:   AgentOllama,
+			EventType:   "CONNECT",
+			Severity:    "MEDIUM",
+			Description: "Ollama 拉取远程模型 (供应链风险)",
+			Keywords:    []string{"ollama pull", "registry.ollama.com", "manifest", "blob"},
+		},
+		{
+			Name:        "ollama-code-exec",
+			AgentType:   AgentOllama,
+			EventType:   "EXECVE",
+			Severity:    "HIGH",
+			Description: "Ollama 模型触发代码执行",
+			Keywords:    []string{"ollama run", "tool_calls", "function_call", "exec(", "os.system"},
+		},
+		{
+			Name:        "ollama-data-exfil",
+			AgentType:   AgentOllama,
+			EventType:   "CONNECT",
+			Severity:    "CRITICAL",
+			Description: "Ollama 向非白名单地址发送数据",
+			Keywords:    []string{"ollama", "POST", "generate", "chat"},
+		},
+		{
+			Name:        "ollama-api-expose",
+			AgentType:   AgentOllama,
+			EventType:   "CONNECT",
+			Severity:    "HIGH",
+			Description: "Ollama API 暴露到外部网络",
+			Keywords:    []string{"0.0.0.0:11434", "OLLAMA_HOST", "listen", "bind"},
+		},
+
 		// ═══ 通用规则 (适用于所有 Agent) ═══
 		{
 			Name:        "generic-prompt-injection",

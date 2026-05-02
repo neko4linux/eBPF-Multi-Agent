@@ -20,6 +20,7 @@ const agentIcons: Record<string, string> = {
   'copilot': '⚫',
   'aider': '⚪',
   'continue': '🟤',
+  'ollama': '🦙',
   'generic': '⬜',
 }
 

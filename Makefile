@@ -249,6 +249,14 @@ demo-bench:
 	@echo "🏁 运行 Benchmark Suite..."
 	python3 demo/benchmark_suite.py --all
 
+demo-ollama:
+	@echo "🦙 Ollama Agent 信息..."
+	python3 demo/ollama_runner.py --list
+
+demo-ollama-bench:
+	@echo "🦙 Ollama Benchmark..."
+	python3 demo/ollama_runner.py --benchmark
+
 # ═══════════════════════════════════════════════════════════════
 #  测试
 # ═══════════════════════════════════════════════════════════════
